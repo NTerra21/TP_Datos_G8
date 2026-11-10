@@ -4,15 +4,6 @@
 /* Grupo 8 - Base Libros */
 /* 27 oct 2026 */
 
-/*
-================================================================================
-COMO USAR
-================================================================================
-1. Ejecutar TODO el script en SQL Server (SSMS / Azure Data Studio).
-2. Parte 1: crea la base, tablas, PK/FK y carga datos (DDL + DML).
-3. Parte 2: resuelve las 53 sentencias del enunciado.
-4. Cada bloque de ejercicio se puede ejecutar por separado despues de la Parte 1.
-*/
 
 IF DB_ID('tp_libros_g8') IS NULL
     CREATE DATABASE tp_libros_g8;
@@ -26,7 +17,6 @@ GO
 -- Limpieza de objetos previos, DDL con PK/FK y carga DML
 -- ==================================================================================================================
 
-/* Borramos objetos previos (orden por dependencias FK) */
 DROP TABLE IF EXISTS PRESTAMO;
 DROP TABLE IF EXISTS COPIAS;
 DROP TABLE IF EXISTS LIBRO;
@@ -75,7 +65,11 @@ CREATE TABLE COPIAS (
     CONSTRAINT FK_COPIAS_LIBRO FOREIGN KEY (NRO_LIBRO) REFERENCES LIBRO (NRO_LIBRO)
 );
 
-/* Prestamos: una misma copia puede prestarse en fechas distintas */
+/* Prestamos: una misma copia puede prestarse en fechas distintas.
+La PK incluye NRO_LECTOR porque el DML registra la copia 2 de LA HOJARASCA
+(10545377) prestada el mismo dia (2018-03-02) a dos lectores distintos
+(123491 y 123456). Con PK (NRO_LIBRO, NRO_COPIA, F_PREST) la carga fallaria.
+*/
 CREATE TABLE PRESTAMO (
     NRO_LECTOR INT      NOT NULL,
     NRO_LIBRO  INT      NOT NULL,
@@ -89,23 +83,22 @@ CREATE TABLE PRESTAMO (
 GO
 
 /*
-NOTA DE DEPURACION (Parte 1):
-El DML original inserta LIBRO con TIPO = 'ez' (ETICA Y DEONTOLOGIA DOCENTE),
-pero TIPOLIBRO no define 'ez'. Eso rompe FK_LIBRO_TIPOLIBRO.
-Se agrega el tipo faltante para poder cargar todo el DML sin error.
+NOTA: El DML original inserta LIBRO con TIPO = 'ez' (ETICA Y DEONTOLOGIA DOCENTE),
+pero TIPOLIBRO no define 'ez'.
+Lo consideramos un error de tipeo de 'es' (Estudio). Se corrige el dato
+en el INSERT de LIBRO (8235698).
 */
 INSERT INTO TIPOLIBRO VALUES ('cu', 'Cuentos');
 INSERT INTO TIPOLIBRO VALUES ('di', 'Diccionario');
 INSERT INTO TIPOLIBRO VALUES ('es', 'Estudio');
 INSERT INTO TIPOLIBRO VALUES ('ju', 'Juegos');
 INSERT INTO TIPOLIBRO VALUES ('no', 'Novela');
-INSERT INTO TIPOLIBRO VALUES ('ez', 'Etica / Deontologia');
 
 /* --------------------------- Carga LIBRO --------------------------- */
 INSERT INTO LIBRO VALUES (5078912,  'LAS MIL Y UNA NOCHES',                  'GALLAND A.',                'no', 20.30,  34.20,  1948, NULL);
 INSERT INTO LIBRO VALUES (6094527,  'FUENTEOVEJUNA',                         'LOPE DE VEGA',              'no', 18.35,  32.10,  1978, NULL);
 INSERT INTO LIBRO VALUES (7034567,  'DICCIONARIO ITALIANO-ESPANOL',          'CERRUTI J.',                'di', 32.70,  32.70,  1992, NULL);
-INSERT INTO LIBRO VALUES (8235698,  'ETICA Y DEONTOLOGIA DOCENTE',           'RUIZ DANIEL J.',            'ez', 54.20,  76.30,  1990, NULL);
+INSERT INTO LIBRO VALUES (8235698,  'ETICA Y DEONTOLOGIA DOCENTE',           'RUIZ DANIEL J.',            'es', 54.20,  76.30,  1990, NULL);  -- 'ez' corregido a 'es'
 INSERT INTO LIBRO VALUES (8753124,  'TABLE GAMES',                           'MARRAN',                    'ju', 12.50,  13.25,  1991, NULL);
 INSERT INTO LIBRO VALUES (9076234,  'BOTANICA MEDICINAL',                    'TRABUT L.',                 'es', 123.48, 143.20, 1978, NULL);
 INSERT INTO LIBRO VALUES (9456789,  'EL CORONEL NO TIENE QUIEN LE ESCRIBA',  'GARCIA MARQUEZ GABRIEL',    'no', 23.20,  31.21,  1978, NULL);
@@ -217,7 +210,7 @@ SELECT
     AUTOR
 FROM LIBRO
 WHERE TIPO = 'no'
-  AND PRECIO_ORI > 21;
+AND PRECIO_ORI > 21;
 
 -- ==================================================================================================================
 -- EJERCICIO 2
@@ -228,7 +221,7 @@ SELECT
     AUTOR
 FROM LIBRO
 WHERE TIPO = 'no'
-   OR PRECIO_ORI > 21;
+OR PRECIO_ORI > 21;
 
 -- ==================================================================================================================
 -- EJERCICIO 3
@@ -241,7 +234,7 @@ SELECT
     EDICION
 FROM LIBRO
 WHERE TIPO = 'no'
-   OR (PRECIO_ORI > 21 AND EDICION > 1985);
+OR (PRECIO_ORI > 21 AND EDICION > 1985);
 
 -- ==================================================================================================================
 -- EJERCICIO 4
@@ -253,7 +246,7 @@ SELECT
     EDICION
 FROM LIBRO
 WHERE EDICION > 1985
-  AND (TIPO = 'no' OR PRECIO_ORI > 21);
+AND (TIPO = 'no' OR PRECIO_ORI > 21);
 
 -- ==================================================================================================================
 -- EJERCICIO 5
@@ -396,8 +389,11 @@ ORDER BY TIPO ASC, EDICION ASC;
 -- ==================================================================================================================
 -- EJERCICIO 18
 -- Tipos y ediciones DISTINTAS, ordenado por Edicion ascendente.
--- Diferencia con 17: DISTINCT elimina pares (tipo, edicion) repetidos.
--- La 17 puede devolver filas duplicadas si varios libros comparten tipo+edicion.
+-- Diferencia con 17: la 17 devuelve 13 filas y la 18 devuelve 12.
+-- El par ('no', 1978) aparece dos veces en la 17, porque FUENTEOVEJUNA y
+-- EL CORONEL NO TIENE QUIEN LE ESCRIBA son novelas editadas en 1978.
+-- Por que: sin DISTINCT se devuelve una fila por libro; DISTINCT elimina
+-- las filas cuyo par (TIPO, EDICION) esta repetido y deja una sola.
 -- ==================================================================================================================
 SELECT DISTINCT
     TIPO,
@@ -560,6 +556,9 @@ FROM LECTOR;
 -- ==================================================================================================================
 -- EJERCICIO 31
 -- Nombre y direccion de lectores con libros a prestamo vigente (subconsulta).
+-- Interpretacion: "tienen libros a prestamo" = prestamos aun no devueltos
+-- (F_DEVOL IS NULL). Sin ese filtro se listarian todos los que alguna vez
+-- pidieron un libro.
 -- ==================================================================================================================
 SELECT
     NOMBRE,
@@ -707,6 +706,15 @@ FROM LECTOR AS LE
 INNER JOIN PRESTAMO AS P ON LE.NRO_LECTOR = P.NRO_LECTOR
 GROUP BY LE.NRO_LECTOR, LE.NOMBRE;
 
+/* Otra opción incluyendo a los lectores sin prestamos. */
+SELECT
+    LE.NRO_LECTOR,
+    LE.NOMBRE,
+    COUNT(P.NRO_LECTOR) AS CANTIDAD_PRESTAMOS
+FROM LECTOR AS LE
+LEFT JOIN PRESTAMO AS P ON LE.NRO_LECTOR = P.NRO_LECTOR
+GROUP BY LE.NRO_LECTOR, LE.NOMBRE;
+
 -- ==================================================================================================================
 -- EJERCICIO 42
 -- Nro de libro, titulo y cantidad de prestamos desde el anio 2012.
@@ -750,6 +758,7 @@ HAVING COUNT(*) > 1;
 -- ==================================================================================================================
 -- EJERCICIO 45
 -- Titulos prestados y nombres de lectores que los tienen en prestamo (sin devolver).
+-- Interpretacion: "los tienen en prestamo" = prestamo vigente (F_DEVOL IS NULL).
 -- ==================================================================================================================
 SELECT
     L.TITULO,
@@ -800,7 +809,7 @@ FROM PRESTAMO AS P
 INNER JOIN LECTOR AS LE ON P.NRO_LECTOR = LE.NRO_LECTOR
 INNER JOIN LIBRO AS L ON P.NRO_LIBRO = L.NRO_LIBRO
 WHERE P.F_DEVOL IS NOT NULL
-  AND L.TIPO IN ('no', 'cu');
+AND L.TIPO IN ('no', 'cu');
 
 -- ==================================================================================================================
 -- EJERCICIO 49
@@ -818,7 +827,7 @@ INNER JOIN LECTOR AS LE ON P.NRO_LECTOR = LE.NRO_LECTOR
 INNER JOIN LIBRO AS L ON P.NRO_LIBRO = L.NRO_LIBRO
 INNER JOIN TIPOLIBRO AS T ON L.TIPO = T.TIPO
 WHERE P.F_DEVOL IS NOT NULL
-  AND L.TIPO IN ('no', 'cu');
+AND L.TIPO IN ('no', 'cu');
 
 -- ==================================================================================================================
 -- EJERCICIO 50
@@ -844,13 +853,21 @@ FROM COPIAS AS C
 INNER JOIN LIBRO AS L ON C.NRO_LIBRO = L.NRO_LIBRO
 LEFT JOIN PRESTAMO AS P
     ON C.NRO_LIBRO = P.NRO_LIBRO
-   AND C.NRO_COPIA = P.NRO_COPIA;
+    AND C.NRO_COPIA = P.NRO_COPIA;
 
 -- ==================================================================================================================
 -- EJERCICIO 52
 -- Sentencia que involucre TODOS los campos de TODAS las tablas.
--- Es posible? SI, uniendo por las claves naturales.
--- Ojo: LEFT JOIN evita perder filas sin prestamo; el resultado puede repetir filas.
+-- Es posible? SI.
+--   a) Con SELECT * FROM LIBRO, TIPOLIBRO, COPIAS,
+--      LECTOR, PRESTAMO (sin condiciones) devuelve todos los campos, pero sería un
+--      producto cartesiano (13 x 5 x 45 x 14 x 10 filas).
+--   b) Uniendo las tablas por sus claves (PK/FK).
+-- Nota: LEFT JOIN a PRESTAMO conserva las copias nunca prestadas.
+-- LECTOR se une a traves de PRESTAMO, asi que los lectores sin prestamos
+-- no aparecerían. Para conservarlos usamos FULL JOIN con LECTOR, lo que hace que las 
+-- columnas de LIBRO queden en NULL.
+-- Los datos de libro/copia se repiten una vez por cada prestamo.
 -- ==================================================================================================================
 SELECT
     L.NRO_LIBRO,
@@ -882,37 +899,45 @@ INNER JOIN TIPOLIBRO AS T ON L.TIPO = T.TIPO
 INNER JOIN COPIAS AS C ON L.NRO_LIBRO = C.NRO_LIBRO
 LEFT JOIN PRESTAMO AS P
     ON C.NRO_LIBRO = P.NRO_LIBRO
-   AND C.NRO_COPIA = P.NRO_COPIA
-LEFT JOIN LECTOR AS LE ON P.NRO_LECTOR = LE.NRO_LECTOR;
+    AND C.NRO_COPIA = P.NRO_COPIA
+FULL JOIN LECTOR AS LE ON P.NRO_LECTOR = LE.NRO_LECTOR;
 
 -- ==================================================================================================================
 -- EJERCICIO 53
--- Sentencia dada:
+-- Sentencia:
 --   select * from PRESTAMO
 --   where NRO_COPIA < 5
 --     and 'no' in (select TIPO from LIBRO L where L.NRO_LIBRO = NRO_LIBRO)
 --
--- Objetivo: prestamos con NRO_COPIA < 5 cuyo libro sea tipo novela ('no').
+-- Objetivo: devolver los prestamos con NRO_COPIA < 5 cuyo libro sea tipo 
+-- novela ('no').
 --
--- Error: en la subconsulta, NRO_LIBRO sin calificar se resuelve como L.NRO_LIBRO,
---        entonces L.NRO_LIBRO = L.NRO_LIBRO siempre es verdadero (o ambiguo).
---        No correlaciona con PRESTAMO.
+-- Error: en la subconsulta, NRO_LIBRO no tiene alias, entonces, sql busca una
+-- columna sin alias primero en las tablas de la propia subconsulta; como
+-- LIBRO L tiene NRO_LIBRO, la resuelve como L.NRO_LIBRO. La condicion queda 
+-- L.NRO_LIBRO = L.NRO_LIBRO, que es siempre verdadera, y la subconsulta no 
+-- queda correlacionada con PRESTAMO.
+-- Entonces, la subconsulta devuelve los tipos de TODOS los libros. Como
+-- existe alguna novela, 'no' IN (...) es siempre verdadero y la sentencia
+-- devuelve los 10 prestamos (todos tienen NRO_COPIA < 5), en lugar de
+-- los 7 que corresponden a novelas (quedan afuera los 3 de FICCIONES, 'cu').
+-- La solución sería calificar la columna externa con el alias de PRESTAMO.
 --
 -- Sintaxis correcta:
 -- ==================================================================================================================
 SELECT *
 FROM PRESTAMO AS P
 WHERE P.NRO_COPIA < 5
-  AND 'no' IN (
-      SELECT L.TIPO
-      FROM LIBRO AS L
-      WHERE L.NRO_LIBRO = P.NRO_LIBRO
-  );
+AND 'no' IN (
+    SELECT L.TIPO
+    FROM LIBRO AS L
+    WHERE L.NRO_LIBRO = P.NRO_LIBRO
+    );
 
-/* Alternativa equivalente con JOIN */
+/* Otra opción con JOIN */
 SELECT P.*
 FROM PRESTAMO AS P
 INNER JOIN LIBRO AS L ON P.NRO_LIBRO = L.NRO_LIBRO
 WHERE P.NRO_COPIA < 5
-  AND L.TIPO = 'no';
+AND L.TIPO = 'no';
 GO
